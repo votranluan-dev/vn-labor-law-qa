@@ -2,7 +2,7 @@
 
 File này viết cho **chính mình trong tương lai**. Nếu quay lại một commit cũ mà không nhớ gì, hãy đọc từ trên xuống:
 
-- **Phần A: Tổng quan** (dự án là gì, khái niệm, cấu trúc thư mục, cách quay lại commit). Đọc trước.
+- **Phần A: Tổng quan** (dự án là gì, khái niệm, cấu trúc thư mục, cách quay lại commit, ghi chú học về Cosine Similarity). Đọc trước.
 - **Phần B: Các mốc**, mục mới nhất ở trên cùng. Mỗi mốc có giảng source code, kết quả, lỗi đã gặp, việc tiếp theo.
 - **Phần C: Mẫu** để thêm mốc mới.
 
@@ -33,7 +33,7 @@ HAI GIAI ĐOẠN
 - **Vector store (Chroma)**: cơ sở dữ liệu lưu các vector và tìm nhanh "vector nào gần vector câu hỏi nhất". Dữ liệu nằm ở thư mục `db/`.
 - **Metadata**: thông tin đi kèm mỗi chunk (số Điều, tiêu đề, Chương, Mục, nguồn). Giúp chatbot trích dẫn được "Điều 35".
 - **Retriever**: thành phần nhận câu hỏi, đổi thành vector, rồi lấy ra `k` chunk gần nhất.
-- **Cosine similarity**: cách đo "gần nhau" giữa hai vector, dựa trên góc giữa chúng. Càng gần 1 càng giống.
+- **Cosine similarity**: cách đo "gần nhau" giữa hai vector, dựa trên góc giữa chúng. Càng gần 1 càng giống. Giải thích chi tiết ở mục A5.
 - **Hit@1 / Hit@5**: Điều đúng có nằm ở hạng 1 / trong 5 kết quả đầu hay không. Đây là thước đo chính của retrieval.
 
 ## A3. Cấu trúc thư mục
@@ -82,6 +82,104 @@ git switch main
 - `.env`: hiện không cần. Nếu sau này dùng API key thì tự tạo lại, **không bao giờ commit**.
 
 File `docs/bo_luat_lao_dong_2019.txt` **có** nằm trong git nên không phải tải lại.
+
+## A5. Ghi chú học: Cosine Similarity for Vector Search
+
+- **Nguồn:** video "RAG Tutorial 2026 #5: Cosine Similarity for Vector Search Explained" (Harish Neel, playlist Complete RAG Tutorial 2026, tập 5/17).
+- **Ngày ghi chú:** 2026-10-22
+- **Vì sao cần hiểu:** đây là phép đo mà Chroma dùng để quyết định Điều nào "gần" câu hỏi nhất. Hiểu nó thì mới hiểu vì sao retrieval trả về kết quả như bài test ở Mốc 2.
+
+### A5.1 Ý tưởng chính
+
+Mỗi đoạn văn sau khi qua embedding trở thành một **vector**, có thể hình dung như một mũi tên xuất phát từ gốc tọa độ. Cosine similarity **chỉ xem hai mũi tên có cùng hướng hay không**, không quan tâm mũi tên dài hay ngắn.
+
+| Quan hệ giữa hai vector | Cosine | Ý nghĩa |
+|---|---|---|
+| Cùng hướng | gần **1** | rất giống nghĩa |
+| Vuông góc | gần **0** | không liên quan |
+| Ngược hướng | **-1** | trái nghĩa hoàn toàn (rất hiếm với văn bản) |
+
+Video nói khoảng giá trị là "từ 0 đến 1". Đó là cách nói gọn vì kết quả với văn bản thực tế thường dương. Về toán học, khoảng đúng là **từ -1 đến 1**.
+
+**Vì sao dùng hướng thay vì độ dài?** Hướng của vector mang ý nghĩa, còn độ dài phụ thuộc những yếu tố như văn bản dài hay ngắn. Nhờ vậy một Điều luật dài và một câu hỏi ngắn vẫn so sánh công bằng được.
+
+### A5.2 Công thức
+
+```
+cosine_similarity = (A · B) / (|A| × |B|)
+```
+
+| Ký hiệu | Nghĩa | Cách tính |
+|---|---|---|
+| `A · B` | Tích vô hướng (dot product) | Nhân từng cặp số tương ứng rồi cộng lại |
+| `\|A\|` | Độ dài (magnitude) của vector A | Căn bậc hai của tổng bình phương các số trong A |
+| `\|B\|` | Độ dài của vector B | Tương tự |
+
+Chia cho hai độ dài là để **loại bỏ ảnh hưởng của chiều dài**, chỉ còn lại góc giữa hai vector.
+
+### A5.3 Ví dụ trong video, tính tay
+
+- Query: `"How to train a dog"`, vector `A = [0.6, 0.3, 0.2, 0.7]`
+- Chunk: `"Dog training techniques and methods"`, vector `B = [0.7, 0.4, 0.1, 0.6]`
+
+| Bước | Phép tính | Kết quả |
+|---|---|---|
+| 1. Tích vô hướng | 0.6×0.7 + 0.3×0.4 + 0.2×0.1 + 0.7×0.6 = 0.42 + 0.12 + 0.02 + 0.42 | **0.98** |
+| 2. Độ dài A | √(0.36 + 0.09 + 0.04 + 0.49) = √0.98 | **≈ 0.990** |
+| 3. Độ dài B | √(0.49 + 0.16 + 0.01 + 0.36) = √1.02 | **≈ 1.010** |
+| 4. Cosine | 0.98 / (0.990 × 1.010) | **≈ 0.98** |
+
+Gần 1, nghĩa là chunk này rất liên quan đến câu hỏi.
+
+**Ví dụ đối chiếu (số do mình tự đặt, không có trong video):** chunk không liên quan `C = [0.1, 0.9, 0.8, 0.0]` có cosine với A khoảng **0.41**. Hệ thống sẽ xếp chunk B lên trước chunk C.
+
+Các số ở trên đã được chạy lại bằng Python để kiểm tra.
+
+### A5.4 Tự thử trong Python
+
+```python
+import numpy as np
+
+A = np.array([0.6, 0.3, 0.2, 0.7])
+B = np.array([0.7, 0.4, 0.1, 0.6])
+C = np.array([0.1, 0.9, 0.8, 0.0])
+
+def cosine(x, y):
+    return x @ y / (np.linalg.norm(x) * np.linalg.norm(y))
+
+print(cosine(A, B))   # ≈ 0.98
+print(cosine(A, C))   # ≈ 0.41
+```
+
+Đổi các số trong `C` và quan sát điểm thay đổi để có cảm giác "hướng giống nhau thì điểm cao".
+
+### A5.5 Cosine nằm ở đâu trong project này
+
+Khi `retriever.invoke(query)` chạy trong `retrieval_pipeline.py`:
+
+1. Câu hỏi được đổi thành vector bằng `bge-m3`.
+2. Chroma tính cosine giữa vector đó và 220 vector Điều.
+3. Lấy 5 Điều có điểm cao nhất, đó chính là danh sách `Document 1..5`.
+
+Hai dòng cấu hình liên quan:
+
+| Dòng code | Tác dụng |
+|---|---|
+| `collection_metadata={"hnsw:space": "cosine"}` | Bảo Chroma dùng cosine để đo độ gần |
+| `encode_kwargs={"normalize_embeddings": True}` | Chuẩn hóa mọi vector về độ dài 1, nên mẫu số trong công thức bằng 1 và cosine chính là tích vô hướng, tính nhanh hơn |
+
+### A5.6 Những điều cần nhớ
+
+1. **Cosine đo độ giống về nghĩa, không đảm bảo "đúng luật".** Ở câu 10 của bài test (mức đóng BHXH), Điều 168 vẫn đứng đầu dù không chứa đáp án. Nó chỉ là Điều gần nhất, không phải Điều có câu trả lời.
+2. **Điểm số tuyệt đối không có ý nghĩa cố định.** Không có chuyện "trên 0.5 là liên quan". Mỗi model embedding cho dải điểm khác nhau, nên ngưỡng `score_threshold` phải được chọn bằng cách đo trên bộ test.
+3. **Cẩn thận chiều của điểm khi dùng `score_threshold`.** Chroma với không gian cosine thường trả về **khoảng cách** (khoảng `1 - cosine`), tức số càng **nhỏ** càng gần. Ví dụ ở A5.3: khoảng cách của B với A ≈ 0.02, của C với A ≈ 0.59. **Chưa kiểm chứng** cách LangChain quy đổi ngưỡng trong `similarity_score_threshold`. Khi tới bước đó, **in điểm ra xem** thay vì đoán.
+4. **Cosine chỉ nhìn tổng thể hướng của cả đoạn.** Một Điều dài, nhiều chủ đề (như Điều 35) có vector là "trung bình" của nhiều chủ đề, nên có thể không đủ gần với một câu hỏi chỉ về một chủ đề con. Đây là giả thuyết ở Mốc 2 (mục B1.4), cần thí nghiệm để xác nhận.
+
+### A5.7 Câu hỏi để tự kiểm tra
+
+- Vì sao hai vector có độ dài rất khác nhau vẫn có thể có cosine bằng 1?
+- Nếu không chuẩn hóa vector (`normalize_embeddings=False`), công thức cosine thay đổi thế nào, kết quả có thay đổi không?
+- Với `score_threshold`, in thử điểm của 5 kết quả cho vài câu hỏi để xem dải điểm thực tế của `bge-m3` là bao nhiêu.
 
 ---
 
