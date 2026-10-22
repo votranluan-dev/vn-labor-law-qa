@@ -1,5 +1,7 @@
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -57,3 +59,33 @@ for i, doc in enumerate(relevant_docs, 1):
 # 10. Tôi tự ý nghỉ việc mấy ngày liền thì công ty cho nghỉ luôn có đúng không?
 
 # 11. Mức đóng bảo hiểm xã hội bắt buộc là bao nhiêu phần trăm lương?
+
+
+# TODO: Combine the query and relevant articles (Điều) into one prompt
+combined_input = f"""Based on the following articles of Vietnam's Labor Code 2019, please answer the question: {query}
+
+Articles:
+{chr(10).join([f" - {doc.page_content}" for doc in relevant_docs])}
+
+Please answer in Vietnamese, clearly and helpfully. Rules:
+- Use ONLY the articles above. If they do not contain the answer, say that the provided articles do not have enough information. Do not use outside knowledge.
+- Cite the article number and title (and clause if possible), for example "Điều 35. Quyền đơn phương chấm dứt hợp đồng lao động của người lao động".
+- Pay attention to who the rule applies to (employee or employer). Do not mix them up.
+"""
+
+# Create a local model with Ollama (free, runs on this machine)
+# num_ctx phải đủ lớn để chứa 5 Điều, nếu mặc định quá nhỏ thì prompt bị cắt mất
+model = ChatOllama(model="qwen2.5:3b", temperature=0, num_ctx=8192)
+
+# Define messages for the model
+messages = [
+    SystemMessage(content="You are a helpful assistant that answers questions about Vietnam's Labor Code 2019 based only on the provided articles."),
+    HumanMessage(content=combined_input)
+]
+
+# Invoke the model with combined input
+result = model.invoke(messages)
+
+# Display the result
+print("--- Content only ---")
+print(result.content)
