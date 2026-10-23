@@ -133,6 +133,32 @@ def parse_law(text, source=""):
     return chunks
 
 
+CLAUSE_RE = re.compile(r"^\d+\.\s")
+
+def split_by_clause(doc, max_chars=1200):
+    """Điều dài thì cắt theo khoản; mọi chunk đều giữ full_text của cả Điều"""
+    text = doc.page_content
+    full_meta = {**doc.metadata, "full_text": text}
+    if len(text) <= max_chars:
+        return [Document(page_content=text, metadata=full_meta)]
+
+    lines = text.split("\n")
+    header = lines[0]  # "Điều 35. Tên Điều"
+    parts, cur = [], []
+    for line in lines[1:]:
+        if CLAUSE_RE.match(line) and any(CLAUSE_RE.match(l) for l in cur):
+            parts.append(cur)
+            cur = []
+        cur.append(line)
+    if cur:
+        parts.append(cur)
+
+    return [
+        Document(page_content=header + "\n" + "\n".join(p), metadata=full_meta)
+        for p in parts
+    ]
+
+
 # TODO: Chunk file
 def split_documents(documents):
     """
@@ -148,6 +174,9 @@ def split_documents(documents):
     numbers = {c.metadata["article"] for c in chunks}
     missing = sorted(set(range(1, 221)) - numbers)
     print(f"Tách được {len(chunks)} Điều | Điều bị thiếu: {missing if missing else 'không có'}")
+
+    chunks = [sub for c in chunks for sub in split_by_clause(c)]
+    print(f"Sau khi cắt theo khoản: {len(chunks)} chunk")
 
     # Show first 2 chunks
     for i, chunk in enumerate(chunks[:2]):

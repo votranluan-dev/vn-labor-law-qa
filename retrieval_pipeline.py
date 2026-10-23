@@ -62,24 +62,28 @@ for i, doc in enumerate(relevant_docs, 1):
 
 
 # TODO: Combine the query and relevant articles (Điều) into one prompt
-combined_input = f"""Based on the following articles of Vietnam's Labor Code 2019, please answer the question: {query}
+combined_input = f"""Các Điều luật sau thuộc Bộ luật Lao động 2019:
 
-Articles:
 {chr(10).join([f" - {doc.page_content}" for doc in relevant_docs])}
 
-Please answer in Vietnamese, clearly and helpfully. Rules:
-- Use ONLY the articles above. If they do not contain the answer, say that the provided articles do not have enough information. Do not use outside knowledge.
-- Cite the article number and title (and clause if possible), for example "Điều 35. Quyền đơn phương chấm dứt hợp đồng lao động của người lao động".
-- Pay attention to who the rule applies to (employee or employer). Do not mix them up.
-"""
+Hướng dẫn trả lời:
+- Chỉ dùng các Điều luật ở trên, không dùng kiến thức bên ngoài.
+- Nếu quy định khác nhau theo từng trường hợp, PHẢI liệt kê ĐẦY ĐỦ, mỗi trường hợp một gạch đầu dòng.
+- Chỉ nêu những gì có trong các Điều luật, giữ nguyên các điều kiện của quy định, không thêm lời khuyên chung chung.
+- Chú ý quy định áp dụng cho người lao động hay người sử dụng lao động, không nhầm lẫn.
+- Nếu không đủ thông tin thì chỉ nói rõ là không đủ thông tin, không ghi dòng "Căn cứ".
+- Kết thúc bằng đúng một dòng nguồn: "Căn cứ: Điều X. Tên Điều (khoản Y nếu có)".
+
+Câu hỏi: {query}
+Trả lời:"""
 
 # Create a local model with Ollama (free, runs on this machine)
 # num_ctx phải đủ lớn để chứa 5 Điều, nếu mặc định quá nhỏ thì prompt bị cắt mất
-model = ChatOllama(model="qwen2.5:3b", temperature=0, num_ctx=8192)
+model = ChatOllama(model="qwen2.5:7b", temperature=0, num_ctx=8192)
 
 # Define messages for the model
 messages = [
-    SystemMessage(content="You are a helpful assistant that answers questions about Vietnam's Labor Code 2019 based only on the provided articles."),
+    SystemMessage(content="Bạn là trợ lý trả lời câu hỏi về Bộ luật Lao động Việt Nam 2019, chỉ dựa trên các Điều luật được cung cấp và lịch sử trò chuyện. Luôn trả lời bằng tiếng Việt."),
     HumanMessage(content=combined_input)
 ]
 
