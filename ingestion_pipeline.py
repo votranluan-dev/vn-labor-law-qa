@@ -3,8 +3,10 @@ import re
 import unicodedata
 from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
+
+from embeddings import BgeM3Embeddings
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -200,10 +202,7 @@ def create_vector_store(chunks, persist_directory="db"):
     print(f"Creating vector store and persisting to {persist_directory}")
 
     # Create embeddings (chạy trên máy, miễn phí, hỗ trợ tiếng Việt)
-    embeddings_model = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-m3",
-        encode_kwargs={"normalize_embeddings": True},
-    )
+    embeddings_model = BgeM3Embeddings()
 
     # Create vector store
     print("Creating vector store")

@@ -3,53 +3,33 @@ from langchain_chroma import Chroma
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_ollama import ChatOllama
 from langchain_core.documents import Document
-from langchain_core.embeddings import Embeddings
+
+from embeddings import BgeM3Embeddings
 
 import re
 
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModel
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+load_dotenv()
+
 
 _tok = AutoTokenizer.from_pretrained("BAAI/bge-reranker-v2-m3")
-_rerank_model = AutoModelForSequenceClassification.from_pretrained("BAAI/bge-reranker-v2-m3").eval()
+_rerank_model = AutoModelForSequenceClassification.from_pretrained(
+    "BAAI/bge-reranker-v2-m3", torch_dtype=torch.float16
+).eval()
 
-def rerank_scores(query, texts, batch_size=8):
+def rerank_scores(query, texts, batch_size=4):
     scores = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
         inputs = _tok([query] * len(batch), batch, padding=True, truncation=True,
-                      max_length=1024, return_tensors="pt")
+                      max_length=512, return_tensors="pt")
         with torch.no_grad():
-            logits = _rerank_model(**inputs).logits.view(-1)
+            logits = _rerank_model(**inputs).logits.view(-1).float()
         scores.extend(logits.tolist())
     return scores
 
-# Load environment variables
-load_dotenv()
-
-class BgeM3Embeddings(Embeddings):
-    def __init__(self, model_name="BAAI/bge-m3", batch_size=8):
-        self.tok = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name).eval()
-        self.batch_size = batch_size
-
-    def _encode(self, texts):
-        out = []
-        for i in range(0, len(texts), self.batch_size):
-            batch = texts[i:i + self.batch_size]
-            inputs = self.tok(batch, padding=True, truncation=True,
-                              max_length=1024, return_tensors="pt")
-            with torch.no_grad():
-                cls = self.model(**inputs).last_hidden_state[:, 0]
-            cls = torch.nn.functional.normalize(cls, p=2, dim=1)
-            out.extend(cls.tolist())
-        return out
-
-    def embed_documents(self, texts):
-        return self._encode(texts)
-
-    def embed_query(self, text):
-        return self._encode([text])[0]
 
 embeddings = BgeM3Embeddings()
 
@@ -101,7 +81,7 @@ def ask_question(user_question):
     print(f"Đang tìm với câu hỏi: {search_question}")
 
     # Step 2: Lấy nhiều ứng viên, rerank, gộp theo Điều, lấy 5 Điều tốt nhất
-    hits = db.similarity_search(search_question, k=40)
+    hits = db.similarity_search(search_question, k=25)
 
     scores = rerank_scores(search_question, [h.page_content for h in hits])
     ranked = sorted(zip(hits, scores), key=lambda x: x[1], reverse=True)
