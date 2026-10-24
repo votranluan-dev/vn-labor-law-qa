@@ -1,39 +1,41 @@
-# DEVLOG: Chatbot Luật Lao động 2019
+## Hạn chế đã biết (cập nhật sau khi chạy bộ test 11 câu)
 
-## Mục tiêu
-Chatbot hỏi đáp Bộ luật Lao động Việt Nam 2019, chạy hoàn toàn local, có nhớ hội thoại.
+Kết quả test gần nhất: **10/11 đạt** (từ khóa), nhưng đọc kỹ câu trả lời thì còn 2 câu chưa chính xác hoàn toàn.
 
-## Cách hoạt động
-1. **Ingest** (`ingestion_pipeline.py`, chạy 1 lần): cắt luật theo Điều, Điều dài cắt tiếp theo khoản, embed bằng `bge-m3`, lưu vào `db/` (Chroma).
-2. **Chat** (`history_aware_generation.py`):
-   - Viết lại câu hỏi thành câu pháp lý, độc lập (dùng các câu hỏi trước).
-   - Lấy 25 chunk gần nghĩa nhất, rerank bằng `bge-reranker-v2-m3`, gộp theo Điều, lấy 5 Điều.
-   - `qwen2.5:7b` (Ollama) trả lời chỉ dựa trên 5 Điều đó.
-   - Code tự sinh dòng Nguồn và cảnh báo (không để model tự ghi).
+### 1. Câu "tự ý nghỉ việc": sai điều kiện (nghiêm trọng nhất)
+- Retrieval đúng (Điều 125 đứng đầu, ổn định 3/3 lần), nhưng model 7B viết **"05 ngày làm việc liên tục"**, trong khi luật ghi **"05 ngày cộng dồn trong 30 ngày hoặc 20 ngày cộng dồn trong 365 ngày"**.
+- Nghi nguyên nhân: Điều 36 (đơn phương chấm dứt HĐLĐ) cũng có cụm "05 ngày làm việc liên tục", model trộn hai Điều.
+- Đã thử: prompt viết lại dùng "sa thải/tự ý bỏ việc", cấm nhắc luật ngoài, `num_ctx=6144`, lọc Điều theo điểm rerank. Chưa hết hẳn.
+- Hướng xử lý: hạ ngưỡng lọc điểm (4 → 2), thêm quy tắc "chỉ dùng Điều đúng hình thức xử lý", hoặc chỉ đưa đúng khoản liên quan thay vì cả Điều.
 
-## File chính
-- `ingestion_pipeline.py`: tạo `db/`
-- `embeddings.py`: lớp `BgeM3Embeddings` (viết bằng transformers)
-- `history_aware_generation.py`: chatbot
+### 2. Câu "nợ lương": câu trả lời không ổn định
+- Điều 35 và 97 đều nằm trong top 5, nhưng có lần model chỉ nêu ý Điều 35 (không cần báo trước), có lần chỉ nêu Điều 97 (đền bù lãi từ 15 ngày), hiếm khi nêu đủ cả hai.
+- Câu hỏi cần ghép 2 Điều; model 7B không ổn định ở việc này.
+- Hướng xử lý: thêm quy tắc "nêu ý từ TẤT CẢ các Điều liên quan, mỗi Điều một ý".
 
-## Quyết định quan trọng
-- **Cắt theo Điều/khoản**, không dùng semantic/agentic chunking: luật có cấu trúc rõ.
-- **Có reranker**: Điều 35 từ hạng 19 lên hạng 3 (vector search thuần bỏ sót).
-- **Tự viết embedding** thay `HuggingFaceEmbeddings`: Windows Application Control chặn `pyarrow` (qua `sentence_transformers` → `datasets`).
-- **qwen2.5:7b thay 3b**: 3b liệt kê thiếu và chép sai điều kiện ("liên tục" thay vì "cộng dồn").
-- **Prompt ép chép nguyên văn điều kiện** và liệt kê đủ trường hợp.
+### 3. Giới hạn chung của model 7B
+- Hay bỏ sót chi tiết phụ (ví dụ ngày nghỉ phép tăng theo thâm niên).
+- Thỉnh thoảng sai chính tả ("la động"), ghi sai chữ cái điểm (a, b, c).
+- Kết quả dao động nhẹ giữa các lần chạy dù `temperature=0` (do float16 và cách Ollama tính).
+- Sửa prompt cho một câu có thể làm lệch câu khác. Luôn chạy lại đủ `test_questions.py` sau mỗi thay đổi.
 
-## Thông số tối ưu (RTX 4050 6GB, RAM 16GB)
-`float16`, `k=25`, rerank `max_length=512`, `batch_size=4`, `num_ctx=4096`.
-Ingest lại phải dùng **cùng cấu hình embedding** (và xóa `db/` trước).
+### 4. Giới hạn của bộ test
+- Chỉ kiểm tra từ khóa, không phát hiện được việc model bịa thêm ý hay kết luận ngược. Phải đọc lướt câu trả lời.
+- Prompt viết lại có một mẫu cố định cho câu "tự ý bỏ việc": tốt cho câu test nhưng **không tổng quát** (cần thử thêm cách diễn đạt khác như "nghỉ 3 ngày không phép").
 
-## Hạn chế
-- Mất 1-2 phút/câu (7B chạy lai CPU/GPU, embed/rerank chạy CPU).
-- Hay bỏ sót chi tiết phụ (VD: đền bù lãi khi nợ lương từ 15 ngày).
-- Câu ngoài phạm vi (BHXH) phụ thuộc model tự nói "không đủ thông tin".
+### 5. Phạm vi và hiệu năng
+- Chỉ có Bộ luật Lao động 2019: câu về mức đóng BHXH (Luật BHXH) chỉ trả lời "không đủ thông tin". Hiện phụ thuộc model tự từ chối, chưa có ngưỡng điểm rerank.
+- Chậm: khoảng 65-100 giây/câu (7B chạy lai CPU/GPU ~18%/82%, embedding và reranker chạy CPU, RAM 16 GB sát trần).
+- Tìm kiếm chỉ dùng vector + rerank. Nếu Điều đúng không lọt top 25 của vector search thì reranker không cứu được (chưa có BM25/hybrid).
 
-## Việc tiếp theo
-1. Bộ test 11 câu tự động.
-2. Giao diện Gradio + streaming (tách `chatbot.py`, `cli.py`, `app.py`).
-3. Ngưỡng điểm reranker để từ chối câu ngoài phạm vi.
+### 6. Môi trường
+- Windows Application Control chặn `pyarrow`/`pandas` bản mới, nên không dùng được `sentence_transformers`, `FlagEmbedding` (đã tự viết embedding và reranker bằng `transformers`). Cẩn thận khi cài thêm thư viện (Streamlit, Gradio có thể kéo pandas/pyarrow): chạy `pip freeze` sao lưu trước.
+
+### Lưu ý sử dụng
+Chatbot chỉ mang tính tham khảo, không thay thế tư vấn pháp lý. Mọi câu trả lời đều kèm cảnh báo này (code tự thêm, không phụ thuộc model).
+
+## Việc tiếp theo (cập nhật)
+1. Giao diện Gradio + streaming (tách `chatbot.py`, `cli.py`, `app.py`).
+2. Sửa 2 câu còn dao động nếu có thời gian (xem mục 1, 2).
+3. Ngưỡng điểm rerank để từ chối câu ngoài phạm vi.
 4. Hybrid search (BM25) nếu retrieval sót Điều; thêm Luật BHXH.

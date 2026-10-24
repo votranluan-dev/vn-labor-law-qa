@@ -43,7 +43,7 @@ db = Chroma(
 )
 
 # Set up AI model (local)
-model = ChatOllama(model="qwen2.5:7b", temperature=0, num_ctx=4096)
+model = ChatOllama(model="qwen2.5:7b", temperature=0, num_ctx=6144)
 
 # Store our conversation as messages
 chat_history = []
@@ -66,6 +66,9 @@ def ask_question(user_question):
             "Dùng thuật ngữ pháp lý: 'người lao động', 'người sử dụng lao động', "
             "'đơn phương chấm dứt hợp đồng lao động', 'kỷ luật sa thải', "
             "'không trả lương đầy đủ hoặc đúng thời hạn'... thay cho cách nói đời thường. "
+            "Nếu câu hỏi nói người lao động tự ý nghỉ hoặc bỏ việc mà bị công ty cho nghỉ, "
+            "hãy viết lại là: 'Người sử dụng lao động có quyền xử lý kỷ luật sa thải khi người lao động tự ý bỏ việc trong những trường hợp nào?' "
+            "(không dùng các từ 'liền', 'liên tục', 'đơn phương chấm dứt hợp đồng lao động'). "
             "Giữ nguyên ý nghĩa, không thêm thông tin mới. "
             "Câu viết lại phải kết thúc bằng dấu '?'. KHÔNG trả lời câu hỏi, KHÔNG giải thích."
         )),
@@ -87,10 +90,13 @@ def ask_question(user_question):
     ranked = sorted(zip(hits, scores), key=lambda x: x[1], reverse=True)
 
     docs, seen = [], set()
+    top_score = ranked[0][1]
     for h, s in ranked:
         art = h.metadata["article"]
         if art in seen:
             continue
+        if docs and s < top_score - 4:   # bỏ Điều điểm quá thấp so với Điều đầu
+            break
         seen.add(art)
         docs.append(Document(page_content=h.metadata["full_text"], metadata=h.metadata))
         if len(docs) == 5:
@@ -114,6 +120,8 @@ Hướng dẫn trả lời:
 - Trả lời bằng tiếng Việt. Không viết riêng dòng "Căn cứ" hay "Nguồn" ở cuối; chỉ nhắc số Điều ngay trong câu trả lời khi nêu quy định.
 - Với câu hỏi tình huống ("tôi làm gì được", "có đúng không"), hãy nêu đủ: (1) quyền hoặc quy định áp dụng, (2) điều kiện hoặc thời hạn kèm theo (ví dụ số ngày báo trước, trường hợp ngoại lệ), (3) nghĩa vụ của bên còn lại nếu có. Mỗi ý ghi rõ Điều nào.
 - Khi trích một điểm (a, b, c...) của một khoản, PHẢI nêu kèm câu dẫn của khoản đó (ví dụ khoản đó nói về trường hợp được nghỉ "không cần báo trước" hay "phải báo trước"). Chỉ ghi chữ cái điểm nếu nó xuất hiện đúng trong Điều luật ở trên; nếu không chắc thì chỉ ghi số khoản. Nếu Điều luật khác trong danh sách có quy định liên quan đến cùng tình huống (ví dụ nghĩa vụ bồi thường, đền bù), nêu thêm ý đó.
+- Chỉ được nhắc đến các Điều thuộc Bộ luật Lao động 2019 nằm trong danh sách trên. Tuyệt đối không nhắc đến luật hay bộ luật khác. Nếu một Điều trả lời trực tiếp câu hỏi (ví dụ Điều quy định các trường hợp sa thải), hãy ưu tiên dùng Điều đó và bỏ qua các Điều không liên quan.
+- Khi Điều luật nêu điều kiện kèm theo (ví dụ "cộng dồn", "trong thời hạn", "không có lý do chính đáng", "trừ trường hợp"), PHẢI nêu đủ TẤT CẢ các điều kiện đó, không rút gọn.
 
 Câu hỏi: {search_question}
 Trả lời:"""
@@ -144,6 +152,10 @@ Trả lời:"""
 
     print(f"\nTrả lời: {answer}")
     return answer
+
+
+def reset_history():
+    chat_history.clear()
 
 
 # Simple chat loop
